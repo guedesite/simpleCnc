@@ -85,6 +85,14 @@
 			unit="mm"
 			{disabled}
 		/>
+		<label class="toggle-row">
+			<input
+				type="checkbox"
+				bind:checked={$project.invertedMode}
+				{disabled}
+			/>
+			<span class="toggle-label">Inverted (engrave)</span>
+		</label>
 	{/if}
 </div>
 
@@ -102,5 +110,24 @@
 		letter-spacing: 1px;
 		border-bottom: 1px solid #333;
 		padding-bottom: 8px;
+	}
+	.toggle-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		cursor: pointer;
+	}
+	.toggle-row input[type="checkbox"] {
+		accent-color: #0af;
+		width: 16px;
+		height: 16px;
+	}
+	.toggle-row input[type="checkbox"]:disabled {
+		cursor: not-allowed;
+		opacity: 0.5;
+	}
+	.toggle-label {
+		font-size: 0.8rem;
+		color: #ccc;
 	}
 </style>

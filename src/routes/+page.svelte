@@ -371,7 +371,8 @@
 			machineConfig: getResolvedMachineConfig(),
 			stockConfig: $stockConfig,
 			resolution: $project.resolution,
-			stepover: $project.stepover
+			stepover: $project.stepover,
+			invertedMode: $project.invertedMode
 		}, [mergedVertices.buffer]);
 	}
 

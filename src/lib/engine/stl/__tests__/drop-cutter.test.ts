@@ -237,4 +237,66 @@ describe('computeHeightMap', () => {
 			expect(heightMap.data[i]).toBe(0);
 		}
 	});
+
+	it('V-bit height map never goes below zero (stock surface)', () => {
+		// Triangle sitting on stock surface - V-bit edge contact near base
+		// should NOT produce negative Z values
+		const baseTriangle: Triangle = {
+			v0: { x: 5, y: 5, z: 3 },
+			v1: { x: 15, y: 5, z: 3 },
+			v2: { x: 10, y: 15, z: 3 }
+		};
+		const config: ZMapConfig = {
+			resolution: 1,
+			gridWidth: 20,
+			gridHeight: 20,
+			physicalWidth: 20,
+			physicalHeight: 20
+		};
+
+		const heightMap = computeHeightMap([baseTriangle], config, vbitTool);
+		for (let i = 0; i < heightMap.data.length; i++) {
+			expect(heightMap.data[i]).toBeGreaterThanOrEqual(0);
+		}
+	});
+
+	it('BallNose height map never goes below zero', () => {
+		const baseTriangle: Triangle = {
+			v0: { x: 5, y: 5, z: 3 },
+			v1: { x: 15, y: 5, z: 3 },
+			v2: { x: 10, y: 15, z: 3 }
+		};
+		const config: ZMapConfig = {
+			resolution: 1,
+			gridWidth: 20,
+			gridHeight: 20,
+			physicalWidth: 20,
+			physicalHeight: 20
+		};
+
+		const heightMap = computeHeightMap([baseTriangle], config, ballTool);
+		for (let i = 0; i < heightMap.data.length; i++) {
+			expect(heightMap.data[i]).toBeGreaterThanOrEqual(0);
+		}
+	});
+
+	it('FlatEnd height map never goes below zero', () => {
+		const baseTriangle: Triangle = {
+			v0: { x: 5, y: 5, z: 3 },
+			v1: { x: 15, y: 5, z: 3 },
+			v2: { x: 10, y: 15, z: 3 }
+		};
+		const config: ZMapConfig = {
+			resolution: 1,
+			gridWidth: 20,
+			gridHeight: 20,
+			physicalWidth: 20,
+			physicalHeight: 20
+		};
+
+		const heightMap = computeHeightMap([baseTriangle], config, flatTool);
+		for (let i = 0; i < heightMap.data.length; i++) {
+			expect(heightMap.data[i]).toBeGreaterThanOrEqual(0);
+		}
+	});
 });

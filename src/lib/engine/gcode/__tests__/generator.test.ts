@@ -16,7 +16,8 @@ const toolConfig: ToolConfig = {
 const machineConfig: MachineConfig = {
 	safeZ: 5,
 	originX: 0,
-	originY: 0
+	originY: 0,
+	originPosition: 'front-left'
 };
 
 describe('generateGCode', () => {

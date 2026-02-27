@@ -14,7 +14,8 @@ const toolConfig = {
 const machineConfig = {
 	safeZ: 5,
 	originX: 0,
-	originY: 0
+	originY: 0,
+	originPosition: 'front-left' as const
 };
 
 describe('generateHeader', () => {

@@ -51,6 +51,7 @@ export interface StlWorkerInput {
 	stockConfig: StockConfig;
 	resolution: number;
 	stepover: number;
+	invertedMode?: boolean;
 }
 
 export interface StlWorkerProgress {

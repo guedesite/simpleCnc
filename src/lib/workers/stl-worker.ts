@@ -1,6 +1,6 @@
 import type { StlWorkerInput, StlWorkerOutput } from '$lib/types/worker-messages.js';
 import { computeHeightMap } from '$lib/engine/stl/drop-cutter.js';
-import { generateRasterPaths, rasterPathsToFloat32Array } from '$lib/engine/stl/raster.js';
+import { generateRasterPaths, rasterPathsToFloat32Array, invertHeightMap } from '$lib/engine/stl/raster.js';
 import { generateGCodeFromPoints } from '$lib/engine/gcode/generator.js';
 import type { ZMapConfig } from '$lib/types/stl.js';
 
@@ -11,7 +11,7 @@ function postProgress(stage: string, percent: number) {
 
 self.onmessage = (event: MessageEvent<StlWorkerInput>) => {
 	try {
-		const { vertices, toolConfig, machineConfig, stockConfig, resolution, stepover } = event.data;
+		const { vertices, toolConfig, machineConfig, stockConfig, resolution, stepover, invertedMode } = event.data;
 
 		// Step 1: Compute height map (vertices passed directly as Float32Array)
 		const gridWidth = Math.max(2, Math.ceil(stockConfig.width / resolution));
@@ -33,20 +33,23 @@ self.onmessage = (event: MessageEvent<StlWorkerInput>) => {
 			(pct) => postProgress('Computing height map', 10 + pct * 0.6)
 		);
 
-		// Step 2: Generate raster paths
+		// Step 2: Apply inverted mode if enabled
+		const finalHeightMap = invertedMode ? invertHeightMap(heightMap) : heightMap;
+
+		// Step 3: Generate raster paths
 		postProgress('Generating raster paths', 75);
 		const rasterPaths = generateRasterPaths(
-			heightMap,
+			finalHeightMap,
 			stepover,
 			machineConfig.safeZ,
 			(pct) => postProgress('Generating raster paths', 75 + pct * 0.1)
 		);
 
-		// Step 3: Prepare toolpath data and send preview
+		// Step 4: Prepare toolpath data and send preview
 		const toolpathData = rasterPathsToFloat32Array(rasterPaths);
 		self.postMessage({ type: 'toolpath-preview', toolpathData: new Float32Array(toolpathData) });
 
-		// Step 4: Generate G-code
+		// Step 5: Generate G-code
 		postProgress('Generating G-code', 90);
 		const gcode = generateGCodeFromPoints(rasterPaths, toolConfig, machineConfig);
 

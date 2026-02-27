@@ -14,6 +14,7 @@ export interface ProjectState {
 	cutDepth: number;
 	stepover: number;
 	resolution: number;
+	invertedMode: boolean;
 }
 
 const initialState: ProjectState = {
@@ -26,7 +27,8 @@ const initialState: ProjectState = {
 	errorMessage: '',
 	cutDepth: 1.0,
 	stepover: 1.0,
-	resolution: 0.5
+	resolution: 0.5,
+	invertedMode: false
 };
 
 export const project = writable<ProjectState>({ ...initialState });

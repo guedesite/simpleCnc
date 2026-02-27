@@ -7,6 +7,24 @@ export interface RasterPath {
 }
 
 /**
+ * Invert a height map for "engrave" mode.
+ * Normal mode: tool follows surface up (leaves model raised, removes material around it).
+ * Inverted mode: tool cuts into stock where the model is (engraves the model shape).
+ *
+ * Transformation: invertedZ = -originalZ
+ * - Where model is tallest (Z=5) → deepest cut (Z=-5)
+ * - Where no model (Z=0) → stock surface (Z=0)
+ */
+export function invertHeightMap(heightMap: HeightMap): HeightMap {
+	const { config, data } = heightMap;
+	const inverted = new Float32Array(data.length);
+	for (let i = 0; i < data.length; i++) {
+		inverted[i] = -data[i];
+	}
+	return { config, data: inverted };
+}
+
+/**
  * Generate zigzag raster paths from a height map.
  * Traverses the height map in alternating X-direction rows (along Y axis).
  *

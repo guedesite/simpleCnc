@@ -205,7 +205,7 @@ function computeHeightMapOptimized(
 				if (z > maxZ) maxZ = z;
 			}
 
-			data[gy * gw + gx] = maxZ === -Infinity ? 0 : maxZ;
+			data[gy * gw + gx] = maxZ === -Infinity ? 0 : Math.max(0, maxZ);
 		}
 
 		if (onProgress && gy % 10 === 0) {
