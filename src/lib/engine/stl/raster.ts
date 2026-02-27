@@ -9,6 +9,12 @@ export interface RasterPath {
 /**
  * Generate zigzag raster paths from a height map.
  * Traverses the height map in alternating X-direction rows (along Y axis).
+ *
+ * Optimizations:
+ * - Connected rows: consecutive rows are linked directly without retract/rapid
+ *   when the stepover distance is small. The tool moves at cutting feed rate
+ *   along the stepover connecting segment.
+ * - First row still uses rapid approach + plunge; last row still retracts.
  */
 export function generateRasterPaths(
 	heightMap: HeightMap,
@@ -22,11 +28,17 @@ export function generateRasterPaths(
 	// Calculate row spacing in grid units
 	const rowSpacingGrid = Math.max(1, Math.round(stepover / (config.physicalWidth / (config.gridWidth - 1))));
 
-	let forward = true;
-	let rowCount = 0;
-	const totalRows = Math.ceil(config.gridHeight / rowSpacingGrid);
-
+	// Collect all row Y indices
+	const rowIndices: number[] = [];
 	for (let gy = 0; gy < config.gridHeight; gy += rowSpacingGrid) {
+		rowIndices.push(gy);
+	}
+
+	const totalRows = rowIndices.length;
+	let forward = true;
+
+	for (let rowIdx = 0; rowIdx < totalRows; rowIdx++) {
+		const gy = rowIndices[rowIdx];
 		const rowPoints: Point3D[] = [];
 
 		if (forward) {
@@ -45,8 +57,13 @@ export function generateRasterPaths(
 			}
 		}
 
-		if (rowPoints.length > 0) {
-			// Rapid move to above start of row
+		if (rowPoints.length === 0) {
+			forward = !forward;
+			continue;
+		}
+
+		if (rowIdx === 0) {
+			// First row: rapid approach + plunge
 			const start = rowPoints[0];
 			paths.push({
 				points: [{ x: start.x, y: start.y, z: safeZ }],
@@ -66,8 +83,26 @@ export function generateRasterPaths(
 					isRapid: false
 				});
 			}
+		} else {
+			// Subsequent rows: connect directly from previous row end
+			// The stepover connecting segment is a cutting move
+			const start = rowPoints[0];
+			paths.push({
+				points: [start],
+				isRapid: false
+			});
 
-			// Retract
+			// Cut row
+			if (rowPoints.length > 1) {
+				paths.push({
+					points: rowPoints.slice(1),
+					isRapid: false
+				});
+			}
+		}
+
+		// Only retract after the last row
+		if (rowIdx === totalRows - 1) {
 			const end = rowPoints[rowPoints.length - 1];
 			paths.push({
 				points: [{ x: end.x, y: end.y, z: safeZ }],
@@ -76,10 +111,9 @@ export function generateRasterPaths(
 		}
 
 		forward = !forward;
-		rowCount++;
 
-		if (onProgress && rowCount % 5 === 0) {
-			onProgress((rowCount / totalRows) * 100);
+		if (onProgress && (rowIdx + 1) % 5 === 0) {
+			onProgress(((rowIdx + 1) / totalRows) * 100);
 		}
 	}
 

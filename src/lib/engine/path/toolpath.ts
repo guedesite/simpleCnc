@@ -26,6 +26,8 @@ export interface ToolPathStats {
 
 /**
  * Convert 2D polylines to a 3D toolpath with safe Z movements.
+ * Uses ramp entry: the tool descends gradually along the first cutting
+ * edge instead of plunging straight down, which is gentler on tools.
  */
 export function polylinesToToolPath(
 	polylines: { points: { x: number; y: number }[] }[],
@@ -57,23 +59,36 @@ export function polylinesToToolPath(
 			});
 			rapidDistance += rapidDist;
 			totalDistance += rapidDist;
-			// Approximate rapid at 5000 mm/min
 			totalTime += rapidDist / 5000;
 		}
 
-		// Plunge
-		const plungeTarget: Point3D = { x: firstPt.x, y: firstPt.y, z: -cutDepth };
-		const plungeDist = Math.abs(safeZ + cutDepth);
+		// Ramp entry: if the polyline has enough length, descend along
+		// the first segment(s) instead of plunging straight down.
+		const rampResult = createRampEntry(
+			polyline.points,
+			cutDepth,
+			safeZ,
+			plungeRate
+		);
+
+		// Plunge/ramp segment
 		segments.push({
-			points: [aboveFirst, plungeTarget],
+			points: rampResult.plungePoints,
 			moveType: MoveType.Plunge
 		});
+		const plungeDist = polyline3DLength(rampResult.plungePoints);
 		totalDistance += plungeDist;
 		totalTime += plungeDist / plungeRate;
 
-		// Cut path
-		const cutPoints: Point3D[] = [plungeTarget];
-		for (let i = 1; i < polyline.points.length; i++) {
+		// Cut path (remaining points after ramp)
+		const cutPoints: Point3D[] = [];
+		const startIdx = rampResult.resumeIndex;
+
+		// Add the last ramp point as first cut point for continuity
+		const lastRampPt = rampResult.plungePoints[rampResult.plungePoints.length - 1];
+		cutPoints.push(lastRampPt);
+
+		for (let i = startIdx; i < polyline.points.length; i++) {
 			const pt = polyline.points[i];
 			const p3d: Point3D = { x: pt.x, y: pt.y, z: -cutDepth };
 			const segDist = dist3D(cutPoints[cutPoints.length - 1], p3d);
@@ -82,21 +97,25 @@ export function polylinesToToolPath(
 			totalTime += segDist / feedRate;
 			cutPoints.push(p3d);
 		}
-		segments.push({
-			points: cutPoints,
-			moveType: MoveType.Cut
-		});
+
+		if (cutPoints.length > 1) {
+			segments.push({
+				points: cutPoints,
+				moveType: MoveType.Cut
+			});
+		}
 
 		// Retract
 		const lastCutPt = cutPoints[cutPoints.length - 1];
 		const retractTarget: Point3D = { x: lastCutPt.x, y: lastCutPt.y, z: safeZ };
+		const retractDist = Math.abs(safeZ - lastCutPt.z);
 		segments.push({
 			points: [lastCutPt, retractTarget],
 			moveType: MoveType.Retract
 		});
-		rapidDistance += plungeDist;
-		totalDistance += plungeDist;
-		totalTime += plungeDist / 5000;
+		rapidDistance += retractDist;
+		totalDistance += retractDist;
+		totalTime += retractDist / 5000;
 
 		lastPos = retractTarget;
 	}
@@ -112,11 +131,109 @@ export function polylinesToToolPath(
 	};
 }
 
+interface RampResult {
+	/** Points for the plunge/ramp segment (from safeZ down to -cutDepth) */
+	plungePoints: Point3D[];
+	/** Index in the original polyline to resume cutting from */
+	resumeIndex: number;
+}
+
+/**
+ * Create a ramp entry along the first edge(s) of a polyline.
+ * The tool descends gradually at a max ramp angle of ~3° (configurable).
+ * Falls back to straight plunge for very short polylines.
+ */
+function createRampEntry(
+	points: { x: number; y: number }[],
+	cutDepth: number,
+	safeZ: number,
+	plungeRate: number
+): RampResult {
+	const totalDrop = safeZ + cutDepth;
+	const maxRampAngleDeg = 3; // degrees - gentle ramp angle
+	const maxRampAngle = (maxRampAngleDeg * Math.PI) / 180;
+	const minRampXY = totalDrop / Math.tan(maxRampAngle); // horizontal distance needed
+
+	// Calculate available horizontal distance along the polyline
+	let availableXY = 0;
+	let rampEndIdx = 0;
+
+	for (let i = 1; i < points.length; i++) {
+		const dx = points[i].x - points[i - 1].x;
+		const dy = points[i].y - points[i - 1].y;
+		availableXY += Math.sqrt(dx * dx + dy * dy);
+		rampEndIdx = i;
+
+		if (availableXY >= minRampXY) break;
+	}
+
+	// Fall back to straight plunge when:
+	// - polyline too short (< 2 points)
+	// - available XY too short (less than 3x the drop = steep ramp not worth it)
+	// - ramp would consume all polyline points (need at least 1 left for cutting)
+	const needsStraightPlunge =
+		points.length < 3 ||
+		availableXY < totalDrop * 3 ||
+		rampEndIdx >= points.length - 1;
+
+	if (needsStraightPlunge) {
+		const fp = points[0];
+		return {
+			plungePoints: [
+				{ x: fp.x, y: fp.y, z: safeZ },
+				{ x: fp.x, y: fp.y, z: -cutDepth }
+			],
+			resumeIndex: 1
+		};
+	}
+
+	// Build ramp points: interpolate Z from safeZ to -cutDepth
+	// proportional to XY distance traveled
+	const rampXY = Math.min(availableXY, minRampXY);
+	const plungePoints: Point3D[] = [];
+
+	plungePoints.push({ x: points[0].x, y: points[0].y, z: safeZ });
+
+	let distSoFar = 0;
+	for (let i = 1; i <= rampEndIdx; i++) {
+		const dx = points[i].x - points[i - 1].x;
+		const dy = points[i].y - points[i - 1].y;
+		const segLen = Math.sqrt(dx * dx + dy * dy);
+		distSoFar += segLen;
+
+		const t = Math.min(distSoFar / rampXY, 1.0);
+		const z = safeZ - t * totalDrop;
+
+		plungePoints.push({ x: points[i].x, y: points[i].y, z });
+
+		if (t >= 1.0) break;
+	}
+
+	// Ensure we reach full depth
+	const lastPt = plungePoints[plungePoints.length - 1];
+	if (Math.abs(lastPt.z - (-cutDepth)) > 0.001) {
+		lastPt.z = -cutDepth;
+	}
+
+	return {
+		plungePoints,
+		resumeIndex: rampEndIdx + 1
+	};
+}
+
 function dist3D(a: Point3D, b: Point3D): number {
 	const dx = b.x - a.x;
 	const dy = b.y - a.y;
 	const dz = b.z - a.z;
 	return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+function polyline3DLength(points: Point3D[]): number {
+	let len = 0;
+	for (let i = 1; i < points.length; i++) {
+		len += dist3D(points[i - 1], points[i]);
+	}
+	return len;
 }
 
 /**
