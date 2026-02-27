@@ -1,7 +1,14 @@
 <script lang="ts">
 	import NumberInput from '$lib/components/ui/NumberInput.svelte';
+	import OriginSelector from '$lib/components/ui/OriginSelector.svelte';
 	import { machineConfig, stockConfig } from '$lib/stores/machine-config.js';
 	import { project, hasSvgObjects, hasStlObjects } from '$lib/stores/project.js';
+
+	interface Props {
+		disabled?: boolean;
+	}
+
+	let { disabled = false }: Props = $props();
 </script>
 
 <div class="panel">
@@ -13,6 +20,7 @@
 		max={2000}
 		step={1}
 		unit="mm"
+		{disabled}
 	/>
 	<NumberInput
 		label="Stock Height"
@@ -21,6 +29,7 @@
 		max={2000}
 		step={1}
 		unit="mm"
+		{disabled}
 	/>
 	<NumberInput
 		label="Stock Thickness"
@@ -29,6 +38,7 @@
 		max={200}
 		step={0.1}
 		unit="mm"
+		{disabled}
 	/>
 	<NumberInput
 		label="Safe Z"
@@ -37,22 +47,12 @@
 		max={50}
 		step={0.5}
 		unit="mm"
+		{disabled}
 	/>
-	<NumberInput
-		label="Origin X"
-		bind:value={$machineConfig.originX}
-		min={-1000}
-		max={1000}
-		step={0.1}
-		unit="mm"
-	/>
-	<NumberInput
-		label="Origin Y"
-		bind:value={$machineConfig.originY}
-		min={-1000}
-		max={1000}
-		step={0.1}
-		unit="mm"
+	<OriginSelector
+		value={$machineConfig.originPosition}
+		onchange={(pos) => machineConfig.update(c => ({ ...c, originPosition: pos }))}
+		{disabled}
 	/>
 
 	{#if $hasSvgObjects}
@@ -63,6 +63,7 @@
 			max={50}
 			step={0.1}
 			unit="mm"
+			{disabled}
 		/>
 	{/if}
 	{#if $hasStlObjects}
@@ -73,6 +74,7 @@
 			max={5}
 			step={0.1}
 			unit="mm"
+			{disabled}
 		/>
 		<NumberInput
 			label="Stepover"
@@ -81,6 +83,7 @@
 			max={20}
 			step={0.1}
 			unit="mm"
+			{disabled}
 		/>
 	{/if}
 </div>

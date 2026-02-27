@@ -4,9 +4,11 @@
 
 	interface Props {
 		viewer: ObjectViewer;
+		disabled?: boolean;
 	}
 
 	let props: Props = $props();
+	let disabled = $derived(props.disabled ?? false);
 
 	let posX = $state(0);
 	let posY = $state(0);
@@ -70,27 +72,27 @@
 
 	<div class="section-label">Position</div>
 	<div class="row3">
-		<NumberInput label="X" bind:value={posX} min={-2000} max={2000} step={0.1} unit="mm" onchange={onPosX} />
-		<NumberInput label="Y" bind:value={posY} min={-2000} max={2000} step={0.1} unit="mm" onchange={onPosY} />
-		<NumberInput label="Z" bind:value={posZ} min={-2000} max={2000} step={0.1} unit="mm" onchange={onPosZ} />
+		<NumberInput label="X" bind:value={posX} min={-2000} max={2000} step={0.1} unit="mm" onchange={onPosX} {disabled} />
+		<NumberInput label="Y" bind:value={posY} min={-2000} max={2000} step={0.1} unit="mm" onchange={onPosY} {disabled} />
+		<NumberInput label="Z" bind:value={posZ} min={-2000} max={2000} step={0.1} unit="mm" onchange={onPosZ} {disabled} />
 	</div>
 
 	<div class="section-label">Rotation</div>
 	<div class="row3">
-		<NumberInput label="X" bind:value={rotX} min={-360} max={360} step={1} unit="°" onchange={onRotX} />
-		<NumberInput label="Y" bind:value={rotY} min={-360} max={360} step={1} unit="°" onchange={onRotY} />
-		<NumberInput label="Z" bind:value={rotZ} min={-360} max={360} step={1} unit="°" onchange={onRotZ} />
+		<NumberInput label="X" bind:value={rotX} min={-360} max={360} step={1} unit="°" onchange={onRotX} {disabled} />
+		<NumberInput label="Y" bind:value={rotY} min={-360} max={360} step={1} unit="°" onchange={onRotY} {disabled} />
+		<NumberInput label="Z" bind:value={rotZ} min={-360} max={360} step={1} unit="°" onchange={onRotZ} {disabled} />
 	</div>
 
 	<div class="section-label">Scale</div>
-	<NumberInput label="Uniform" bind:value={uniformScale} min={0.01} max={100} step={0.01} onchange={onUniformScale} />
+	<NumberInput label="Uniform" bind:value={uniformScale} min={0.01} max={100} step={0.01} onchange={onUniformScale} {disabled} />
 	<div class="row3">
-		<NumberInput label="X" bind:value={scaleX} min={0.01} max={100} step={0.01} onchange={onScaleX} />
-		<NumberInput label="Y" bind:value={scaleY} min={0.01} max={100} step={0.01} onchange={onScaleY} />
-		<NumberInput label="Z" bind:value={scaleZ} min={0.01} max={100} step={0.01} onchange={onScaleZ} />
+		<NumberInput label="X" bind:value={scaleX} min={0.01} max={100} step={0.01} onchange={onScaleX} {disabled} />
+		<NumberInput label="Y" bind:value={scaleY} min={0.01} max={100} step={0.01} onchange={onScaleY} {disabled} />
+		<NumberInput label="Z" bind:value={scaleZ} min={0.01} max={100} step={0.01} onchange={onScaleZ} {disabled} />
 	</div>
 
-	<button class="flatten-btn" onclick={handleAutoFlatten}>
+	<button class="flatten-btn" onclick={handleAutoFlatten} {disabled}>
 		Auto-Flatten (Z=0)
 	</button>
 </div>

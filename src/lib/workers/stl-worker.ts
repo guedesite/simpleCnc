@@ -1,5 +1,4 @@
 import type { StlWorkerInput, StlWorkerOutput } from '$lib/types/worker-messages.js';
-import { verticesToTriangles } from '$lib/engine/stl/loader.js';
 import { computeHeightMap } from '$lib/engine/stl/drop-cutter.js';
 import { generateRasterPaths, rasterPathsToFloat32Array } from '$lib/engine/stl/raster.js';
 import { generateGCodeFromPoints } from '$lib/engine/gcode/generator.js';
@@ -14,11 +13,7 @@ self.onmessage = (event: MessageEvent<StlWorkerInput>) => {
 	try {
 		const { vertices, toolConfig, machineConfig, stockConfig, resolution, stepover } = event.data;
 
-		// Step 1: Convert vertices to triangles
-		postProgress('Parsing mesh', 5);
-		const triangles = verticesToTriangles(vertices);
-
-		// Step 2: Compute height map
+		// Step 1: Compute height map (vertices passed directly as Float32Array)
 		const gridWidth = Math.max(2, Math.ceil(stockConfig.width / resolution));
 		const gridHeight = Math.max(2, Math.ceil(stockConfig.height / resolution));
 
@@ -32,13 +27,13 @@ self.onmessage = (event: MessageEvent<StlWorkerInput>) => {
 
 		postProgress('Computing height map', 10);
 		const heightMap = computeHeightMap(
-			triangles,
+			vertices,
 			zmapConfig,
 			toolConfig,
 			(pct) => postProgress('Computing height map', 10 + pct * 0.6)
 		);
 
-		// Step 3: Generate raster paths
+		// Step 2: Generate raster paths
 		postProgress('Generating raster paths', 75);
 		const rasterPaths = generateRasterPaths(
 			heightMap,
@@ -47,12 +42,13 @@ self.onmessage = (event: MessageEvent<StlWorkerInput>) => {
 			(pct) => postProgress('Generating raster paths', 75 + pct * 0.1)
 		);
 
+		// Step 3: Prepare toolpath data and send preview
+		const toolpathData = rasterPathsToFloat32Array(rasterPaths);
+		self.postMessage({ type: 'toolpath-preview', toolpathData: new Float32Array(toolpathData) });
+
 		// Step 4: Generate G-code
 		postProgress('Generating G-code', 90);
 		const gcode = generateGCodeFromPoints(rasterPaths, toolConfig, machineConfig);
-
-		// Step 5: Prepare transfer data
-		const toolpathData = rasterPathsToFloat32Array(rasterPaths);
 
 		// Calculate stats
 		let totalDistance = 0;

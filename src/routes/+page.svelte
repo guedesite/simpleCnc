@@ -2,9 +2,10 @@
 	import * as THREE from 'three';
 	import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
 	import Viewport3D from '$lib/components/viewport/Viewport3D.svelte';
-	import { project, addObject, removeObject, selectObject, resetProject } from '$lib/stores/project.js';
+	import { project, addObject, removeObject, selectObject, resetProject, isLocked } from '$lib/stores/project.js';
 	import { toolConfig } from '$lib/stores/tool-config.js';
 	import { machineConfig, stockConfig } from '$lib/stores/machine-config.js';
+	import { computeOriginOffsets } from '$lib/types/machine.js';
 	import { parseSvg } from '$lib/engine/svg/parser.js';
 	import { loadStlFromBuffer } from '$lib/engine/stl/loader.js';
 	import {
@@ -22,6 +23,7 @@
 	import type { ProjectObject } from '$lib/types/project-object.js';
 
 	let viewportRef: Viewport3D;
+	let previewShown = false;
 	let sceneCtx: SceneContext | null = $state(null);
 	let currentWorker: Worker | null = null;
 	let transformManager: TransformControlsManager | null = null;
@@ -38,6 +40,19 @@
 				sceneCtx.renderer,
 				sceneCtx.controls
 			);
+		}
+	});
+
+	// Auto-sync originX/originY from originPosition + stock dimensions
+	$effect(() => {
+		const mc = $machineConfig;
+		const w = $stockConfig.width;
+		const h = $stockConfig.height;
+		const { originX, originY } = computeOriginOffsets(mc.originPosition, w, h);
+		// Guard: only update if values actually changed to avoid infinite loop
+		// (reading $machineConfig subscribes to the whole store, so writing back re-triggers this effect)
+		if (mc.originX !== originX || mc.originY !== originY) {
+			machineConfig.update((c) => ({ ...c, originX, originY }));
 		}
 	});
 
@@ -138,6 +153,13 @@
 		resetProject();
 	}
 
+	/** Resolve machineConfig with origin offsets computed from originPosition + stock dims. */
+	function getResolvedMachineConfig() {
+		const mc = $machineConfig;
+		const { originX, originY } = computeOriginOffsets(mc.originPosition, $stockConfig.width, $stockConfig.height);
+		return { ...mc, originX, originY };
+	}
+
 	function handleGenerate() {
 		const p = $project;
 		const hasStl = p.objects.some((o) => o.type === 'stl');
@@ -152,6 +174,7 @@
 
 	function generateSvg() {
 		if (currentWorker) currentWorker.terminate();
+		previewShown = false;
 
 		// Collect transformed polylines from all SVG viewers
 		const allPolylines: import('$lib/types/geometry.js').Polyline[] = [];
@@ -197,6 +220,10 @@
 						progressPercent: msg.percent
 					}));
 					break;
+				case 'toolpath-preview':
+					viewportRef?.showToolpathPreview(msg.toolpathData);
+					previewShown = true;
+					break;
 				case 'result':
 					project.update((p) => ({
 						...p,
@@ -205,7 +232,9 @@
 						progressPercent: 100,
 						progressStage: 'Complete'
 					}));
-					viewportRef?.showToolpath(msg.toolpathData);
+					if (!previewShown) {
+						viewportRef?.showToolpath(msg.toolpathData);
+					}
 					worker.terminate();
 					currentWorker = null;
 					break;
@@ -234,13 +263,14 @@
 			type: 'process-svg',
 			polylines: allPolylines,
 			toolConfig: $toolConfig,
-			machineConfig: $machineConfig,
+			machineConfig: getResolvedMachineConfig(),
 			cutDepth: $project.cutDepth
 		});
 	}
 
 	function generateStl() {
 		if (currentWorker) currentWorker.terminate();
+		previewShown = false;
 
 		// Collect transformed vertices from all STL viewers
 		const vertexArrays: Float32Array[] = [];
@@ -295,6 +325,10 @@
 						progressPercent: msg.percent
 					}));
 					break;
+				case 'toolpath-preview':
+					viewportRef?.showToolpathPreview(msg.toolpathData);
+					previewShown = true;
+					break;
 				case 'result':
 					project.update((p) => ({
 						...p,
@@ -303,7 +337,9 @@
 						progressPercent: 100,
 						progressStage: 'Complete'
 					}));
-					viewportRef?.showToolpath(msg.toolpathData);
+					if (!previewShown) {
+						viewportRef?.showToolpath(msg.toolpathData);
+					}
 					worker.terminate();
 					currentWorker = null;
 					break;
@@ -332,7 +368,7 @@
 			type: 'process-stl',
 			vertices: mergedVertices,
 			toolConfig: $toolConfig,
-			machineConfig: $machineConfig,
+			machineConfig: getResolvedMachineConfig(),
 			stockConfig: $stockConfig,
 			resolution: $project.resolution,
 			stepover: $project.stepover
@@ -401,7 +437,7 @@
 />
 
 <div class="main-area">
-	{#if selectedViewer}
+	{#if selectedViewer && !$isLocked}
 		<div class="toolbar">
 			<button
 				class="tool-btn"

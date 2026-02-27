@@ -78,6 +78,89 @@ function addLineSegments(group: THREE.Group, points: number[], color: number, da
 	group.add(lines);
 }
 
+export interface AnimatedToolpath {
+	group: THREE.Group;
+	animate: () => void;
+	cancel: () => void;
+}
+
+/**
+ * Create an animated toolpath that progressively reveals over ~2 seconds.
+ */
+export function createAnimatedToolpath(data: Float32Array): AnimatedToolpath {
+	const group = new THREE.Group();
+	group.name = 'toolpath';
+
+	// Build a single LineSegments with per-vertex colors
+	const positions: number[] = [];
+	const colors: number[] = [];
+
+	let prevX = 0, prevY = 0, prevZ = 0;
+
+	const colorMap: Record<number, [number, number, number]> = {
+		0: [1, 0.27, 0.27],   // rapid: red
+		1: [0.27, 1, 0.27],   // cut: green
+		2: [1, 0.67, 0],      // plunge: orange
+		3: [0.27, 0.27, 1]    // retract: blue
+	};
+
+	for (let i = 0; i < data.length; i += 4) {
+		const x = data[i];
+		const y = data[i + 2]; // Swap Y/Z for Three.js
+		const z = data[i + 1];
+		const moveType = data[i + 3];
+
+		if (i > 0) {
+			const c = colorMap[moveType] ?? [1, 1, 1];
+			positions.push(prevX, prevY, prevZ, x, y, z);
+			colors.push(c[0], c[1], c[2], c[0], c[1], c[2]);
+		}
+
+		prevX = x;
+		prevY = y;
+		prevZ = z;
+	}
+
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+	geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+	const totalVertices = positions.length / 3;
+	geometry.setDrawRange(0, 0);
+
+	const material = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 1 });
+	const lines = new THREE.LineSegments(geometry, material);
+	group.add(lines);
+
+	let animId = 0;
+	let cancelled = false;
+
+	function animate() {
+		const durationMs = 2000;
+		const startTime = performance.now();
+
+		function frame() {
+			if (cancelled) return;
+			const elapsed = performance.now() - startTime;
+			const t = Math.min(elapsed / durationMs, 1);
+			const count = Math.floor(t * totalVertices);
+			geometry.setDrawRange(0, count);
+			if (t < 1) {
+				animId = requestAnimationFrame(frame);
+			}
+		}
+
+		animId = requestAnimationFrame(frame);
+	}
+
+	function cancel() {
+		cancelled = true;
+		if (animId) cancelAnimationFrame(animId);
+	}
+
+	return { group, animate, cancel };
+}
+
 /**
  * Remove existing toolpath from scene.
  */

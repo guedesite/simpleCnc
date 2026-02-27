@@ -4,6 +4,12 @@
 	import { toolConfig } from '$lib/stores/tool-config.js';
 	import { ToolType } from '$lib/types/tool.js';
 
+	interface Props {
+		disabled?: boolean;
+	}
+
+	let { disabled = false }: Props = $props();
+
 	const toolTypeOptions = [
 		{ value: ToolType.FlatEnd, label: 'Flat End Mill' },
 		{ value: ToolType.BallNose, label: 'Ball Nose' },
@@ -28,6 +34,7 @@
 		value={$toolConfig.type}
 		options={toolTypeOptions}
 		onchange={updateType}
+		{disabled}
 	/>
 	<NumberInput
 		label="Diameter"
@@ -37,6 +44,7 @@
 		step={0.1}
 		unit="mm"
 		onchange={updateDiameter}
+		{disabled}
 	/>
 	{#if $toolConfig.type === ToolType.VBit}
 		<NumberInput
@@ -47,6 +55,7 @@
 			step={1}
 			unit="deg"
 			onchange={updateAngle}
+			{disabled}
 		/>
 	{/if}
 </div>

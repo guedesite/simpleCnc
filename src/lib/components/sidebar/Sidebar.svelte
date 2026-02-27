@@ -6,7 +6,7 @@
 	import StockPanel from './StockPanel.svelte';
 	import ExportPanel from './ExportPanel.svelte';
 	import TransformPanel from './TransformPanel.svelte';
-	import { project, hasObjects } from '$lib/stores/project.js';
+	import { project, hasObjects, isLocked } from '$lib/stores/project.js';
 	import type { ObjectViewer } from '$lib/components/viewport/stl-controls.js';
 
 	interface Props {
@@ -35,21 +35,23 @@
 				objects={$project.objects}
 				selectedId={$project.selectedObjectId}
 				{onselect}
-				{onremove}
+				onremove={$isLocked ? undefined : onremove}
 			/>
-			<FileUpload {onfiles} compact />
-			<button class="reset-btn" onclick={() => onreset?.()}>
-				Clear All
-			</button>
+			{#if !$isLocked}
+				<FileUpload {onfiles} compact />
+				<button class="reset-btn" onclick={() => onreset?.()}>
+					Clear All
+				</button>
+			{/if}
 		{/if}
 
 		{#if $hasObjects}
-			{#if selectedViewer}
+			{#if selectedViewer && !$isLocked}
 				<TransformPanel viewer={selectedViewer} />
 			{/if}
-			<ToolPanel />
-			<FeedsPanel />
-			<StockPanel />
+			<ToolPanel disabled={$isLocked} />
+			<FeedsPanel disabled={$isLocked} />
+			<StockPanel disabled={$isLocked} />
 			<ExportPanel {ongenerate} />
 		{/if}
 	</div>

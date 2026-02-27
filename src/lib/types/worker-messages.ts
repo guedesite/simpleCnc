@@ -34,7 +34,12 @@ export interface SvgWorkerError {
 	message: string;
 }
 
-export type SvgWorkerOutput = SvgWorkerProgress | SvgWorkerResult | SvgWorkerError;
+export interface SvgToolpathPreview {
+	type: 'toolpath-preview';
+	toolpathData: Float32Array;
+}
+
+export type SvgWorkerOutput = SvgWorkerProgress | SvgWorkerResult | SvgWorkerError | SvgToolpathPreview;
 
 // STL Worker Messages
 export interface StlWorkerInput {
@@ -72,4 +77,9 @@ export interface StlWorkerError {
 	message: string;
 }
 
-export type StlWorkerOutput = StlWorkerProgress | StlWorkerResult | StlWorkerError;
+export interface StlToolpathPreview {
+	type: 'toolpath-preview';
+	toolpathData: Float32Array;
+}
+
+export type StlWorkerOutput = StlWorkerProgress | StlWorkerResult | StlWorkerError | StlToolpathPreview;

@@ -6,10 +6,11 @@
 		max?: number;
 		step?: number;
 		unit?: string;
+		disabled?: boolean;
 		onchange?: (value: number) => void;
 	}
 
-	let { label, value = $bindable(), min = 0, max = 99999, step = 1, unit = '', onchange }: Props = $props();
+	let { label, value = $bindable(), min = 0, max = 99999, step = 1, unit = '', disabled = false, onchange }: Props = $props();
 
 	function handleInput(e: Event) {
 		const target = e.target as HTMLInputElement;
@@ -30,6 +31,7 @@
 			{max}
 			{step}
 			{value}
+			{disabled}
 			oninput={handleInput}
 		/>
 		{#if unit}
@@ -68,6 +70,10 @@
 	input:focus {
 		outline: none;
 		border-color: #0af;
+	}
+	input:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 	.unit {
 		font-size: 0.75rem;

@@ -8,10 +8,11 @@
 		label: string;
 		value: string;
 		options: Option[];
+		disabled?: boolean;
 		onchange?: (value: string) => void;
 	}
 
-	let { label, value = $bindable(), options, onchange }: Props = $props();
+	let { label, value = $bindable(), options, disabled = false, onchange }: Props = $props();
 
 	function handleChange(e: Event) {
 		const target = e.target as HTMLSelectElement;
@@ -22,7 +23,7 @@
 
 <label class="select-input">
 	<span class="label-text">{label}</span>
-	<select {value} onchange={handleChange}>
+	<select {value} {disabled} onchange={handleChange}>
 		{#each options as opt}
 			<option value={opt.value}>{opt.label}</option>
 		{/each}
@@ -55,5 +56,9 @@
 	select:focus {
 		outline: none;
 		border-color: #0af;
+	}
+	select:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 </style>

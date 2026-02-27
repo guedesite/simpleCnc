@@ -39,6 +39,8 @@ export const canGenerate = derived(project, ($p) =>
 	($p.workflowState === 'file-loaded' || $p.workflowState === 'done' || $p.workflowState === 'error')
 );
 
+export const isLocked = derived(project, ($p) => $p.workflowState === 'processing');
+
 export const hasSvgObjects = derived(project, ($p) =>
 	$p.objects.some((o) => o.type === 'svg')
 );
@@ -78,3 +80,4 @@ export function selectObject(id: string) {
 export function resetProject() {
 	project.set({ ...initialState });
 }
+

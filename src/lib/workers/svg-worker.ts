@@ -37,12 +37,13 @@ self.onmessage = (event: MessageEvent<SvgWorkerInput>) => {
 			toolConfig.plungeRate
 		);
 
-		// Step 5: Generate G-code
+		// Step 5: Prepare toolpath data and send preview
+		const toolpathData = toolPathToFloat32Array(toolPath);
+		self.postMessage({ type: 'toolpath-preview', toolpathData: new Float32Array(toolpathData) });
+
+		// Step 6: Generate G-code
 		postProgress('Generating G-code', 90);
 		const gcode = generateGCode(toolPath, toolConfig, machineConfig);
-
-		// Step 6: Prepare transfer data
-		const toolpathData = toolPathToFloat32Array(toolPath);
 
 		const result: SvgWorkerOutput = {
 			type: 'result',

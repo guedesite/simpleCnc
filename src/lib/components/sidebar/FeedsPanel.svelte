@@ -2,6 +2,12 @@
 	import NumberInput from '$lib/components/ui/NumberInput.svelte';
 	import { toolConfig } from '$lib/stores/tool-config.js';
 
+	interface Props {
+		disabled?: boolean;
+	}
+
+	let { disabled = false }: Props = $props();
+
 	function updateSpindleSpeed(val: number) {
 		toolConfig.update((c) => ({ ...c, spindleSpeed: val }));
 	}
@@ -23,6 +29,7 @@
 		step={100}
 		unit="RPM"
 		onchange={updateSpindleSpeed}
+		{disabled}
 	/>
 	<NumberInput
 		label="Feed Rate"
@@ -32,6 +39,7 @@
 		step={10}
 		unit="mm/min"
 		onchange={updateFeedRate}
+		{disabled}
 	/>
 	<NumberInput
 		label="Plunge Rate"
@@ -41,6 +49,7 @@
 		step={10}
 		unit="mm/min"
 		onchange={updatePlungeRate}
+		{disabled}
 	/>
 </div>
 
