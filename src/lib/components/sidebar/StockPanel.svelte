@@ -1,7 +1,7 @@
 <script lang="ts">
 	import NumberInput from '$lib/components/ui/NumberInput.svelte';
 	import { machineConfig, stockConfig } from '$lib/stores/machine-config.js';
-	import { project } from '$lib/stores/project.js';
+	import { project, hasSvgObjects, hasStlObjects } from '$lib/stores/project.js';
 </script>
 
 <div class="panel">
@@ -55,7 +55,7 @@
 		unit="mm"
 	/>
 
-	{#if $project.fileType === 'svg'}
+	{#if $hasSvgObjects}
 		<NumberInput
 			label="Cut Depth"
 			bind:value={$project.cutDepth}
@@ -64,7 +64,8 @@
 			step={0.1}
 			unit="mm"
 		/>
-	{:else if $project.fileType === 'stl'}
+	{/if}
+	{#if $hasStlObjects}
 		<NumberInput
 			label="Resolution"
 			bind:value={$project.resolution}

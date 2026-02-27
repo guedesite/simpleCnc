@@ -11,9 +11,12 @@
 
 	function handleDownload() {
 		if ($project.gcode) {
-			const ext = $project.fileType === 'stl' ? '.nc' : '.nc';
-			const baseName = $project.fileName.replace(/\.[^.]+$/, '');
-			exportGCode($project.gcode, `${baseName}${ext}`);
+			const objects = $project.objects;
+			const baseName =
+				objects.length === 1
+					? objects[0].name.replace(/\.[^.]+$/, '')
+					: 'simplecnc-project';
+			exportGCode($project.gcode, `${baseName}.nc`);
 		}
 	}
 

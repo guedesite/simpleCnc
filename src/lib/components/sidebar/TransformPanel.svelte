@@ -1,15 +1,13 @@
 <script lang="ts">
 	import NumberInput from '$lib/components/ui/NumberInput.svelte';
-	import type { StlViewer, StlTransform } from '$lib/components/viewport/stl-controls.js';
+	import type { ObjectViewer, ObjectTransform } from '$lib/components/viewport/stl-controls.js';
 
 	interface Props {
-		stlViewer: StlViewer;
+		viewer: ObjectViewer;
 	}
 
 	let props: Props = $props();
-	let viewer = $derived(props.stlViewer);
 
-	// Local reactive state synced with the mesh
 	let posX = $state(0);
 	let posY = $state(0);
 	let posZ = $state(0);
@@ -21,7 +19,7 @@
 	let scaleZ = $state(1);
 	let uniformScale = $state(1);
 
-	function syncFromTransform(t: StlTransform) {
+	function syncFromTransform(t: ObjectTransform) {
 		posX = round(t.positionX);
 		posY = round(t.positionY);
 		posZ = round(t.positionZ);
@@ -34,36 +32,36 @@
 		uniformScale = round(t.scaleX);
 	}
 
-	// Initialize from current mesh state
-	function syncFromMesh() {
-		syncFromTransform(viewer.getTransform());
-	}
-
 	function round(v: number): number {
 		return Math.round(v * 1000) / 1000;
 	}
 
-	// Listen for transform changes from mouse interaction
-	viewer.onTransformChange(syncFromTransform);
+	// Subscribe/unsubscribe when viewer changes
+	$effect(() => {
+		const v = props.viewer;
+		syncFromTransform(v.getTransform());
+		v.onTransformChange(syncFromTransform);
+		return () => {
+			v.offTransformChange(syncFromTransform);
+		};
+	});
 
-	syncFromMesh();
-
-	function onPosX(v: number) { viewer.setTransform({ positionX: v }); }
-	function onPosY(v: number) { viewer.setTransform({ positionY: v }); }
-	function onPosZ(v: number) { viewer.setTransform({ positionZ: v }); }
-	function onRotX(v: number) { viewer.setTransform({ rotationX: v }); }
-	function onRotY(v: number) { viewer.setTransform({ rotationY: v }); }
-	function onRotZ(v: number) { viewer.setTransform({ rotationZ: v }); }
-	function onScaleX(v: number) { viewer.setTransform({ scaleX: v }); }
-	function onScaleY(v: number) { viewer.setTransform({ scaleY: v }); }
-	function onScaleZ(v: number) { viewer.setTransform({ scaleZ: v }); }
+	function onPosX(v: number) { props.viewer.setTransform({ positionX: v }); }
+	function onPosY(v: number) { props.viewer.setTransform({ positionY: v }); }
+	function onPosZ(v: number) { props.viewer.setTransform({ positionZ: v }); }
+	function onRotX(v: number) { props.viewer.setTransform({ rotationX: v }); }
+	function onRotY(v: number) { props.viewer.setTransform({ rotationY: v }); }
+	function onRotZ(v: number) { props.viewer.setTransform({ rotationZ: v }); }
+	function onScaleX(v: number) { props.viewer.setTransform({ scaleX: v }); }
+	function onScaleY(v: number) { props.viewer.setTransform({ scaleY: v }); }
+	function onScaleZ(v: number) { props.viewer.setTransform({ scaleZ: v }); }
 	function onUniformScale(v: number) {
-		viewer.setTransform({ scaleX: v, scaleY: v, scaleZ: v });
+		props.viewer.setTransform({ scaleX: v, scaleY: v, scaleZ: v });
 	}
 
 	function handleAutoFlatten() {
-		viewer.autoFlatten();
-		syncFromMesh();
+		props.viewer.autoFlatten();
+		syncFromTransform(props.viewer.getTransform());
 	}
 </script>
 

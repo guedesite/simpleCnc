@@ -1,15 +1,11 @@
 import { writable, derived } from 'svelte/store';
-import type { Polyline } from '$lib/types/geometry.js';
+import type { ProjectObject } from '$lib/types/project-object.js';
 
-export type FileType = 'svg' | 'stl' | null;
 export type WorkflowState = 'idle' | 'file-loaded' | 'processing' | 'done' | 'error';
 
 export interface ProjectState {
-	fileType: FileType;
-	fileName: string;
-	svgPolylines: Polyline[];
-	stlVertices: Float32Array | null;
-	stlBuffer: ArrayBuffer | null;
+	objects: ProjectObject[];
+	selectedObjectId: string | null;
 	workflowState: WorkflowState;
 	gcode: string;
 	progressStage: string;
@@ -21,11 +17,8 @@ export interface ProjectState {
 }
 
 const initialState: ProjectState = {
-	fileType: null,
-	fileName: '',
-	svgPolylines: [],
-	stlVertices: null,
-	stlBuffer: null,
+	objects: [],
+	selectedObjectId: null,
 	workflowState: 'idle',
 	gcode: '',
 	progressStage: '',
@@ -38,12 +31,49 @@ const initialState: ProjectState = {
 
 export const project = writable<ProjectState>({ ...initialState });
 
-export const hasFile = derived(project, ($p) => $p.fileType !== null);
+export const hasObjects = derived(project, ($p) => $p.objects.length > 0);
 export const isProcessing = derived(project, ($p) => $p.workflowState === 'processing');
 export const hasGCode = derived(project, ($p) => $p.gcode.length > 0);
 export const canGenerate = derived(project, ($p) =>
-	$p.workflowState === 'file-loaded' || $p.workflowState === 'done' || $p.workflowState === 'error'
+	$p.objects.length > 0 &&
+	($p.workflowState === 'file-loaded' || $p.workflowState === 'done' || $p.workflowState === 'error')
 );
+
+export const hasSvgObjects = derived(project, ($p) =>
+	$p.objects.some((o) => o.type === 'svg')
+);
+export const hasStlObjects = derived(project, ($p) =>
+	$p.objects.some((o) => o.type === 'stl')
+);
+
+export function addObject(obj: ProjectObject) {
+	project.update((p) => ({
+		...p,
+		objects: [...p.objects, obj],
+		selectedObjectId: obj.id,
+		workflowState: 'file-loaded'
+	}));
+}
+
+export function removeObject(id: string) {
+	project.update((p) => {
+		const objects = p.objects.filter((o) => o.id !== id);
+		const selectedObjectId =
+			p.selectedObjectId === id
+				? (objects.length > 0 ? objects[0].id : null)
+				: p.selectedObjectId;
+		return {
+			...p,
+			objects,
+			selectedObjectId,
+			workflowState: objects.length > 0 ? p.workflowState : 'idle'
+		};
+	});
+}
+
+export function selectObject(id: string) {
+	project.update((p) => ({ ...p, selectedObjectId: id }));
+}
 
 export function resetProject() {
 	project.set({ ...initialState });

@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import type { Polyline } from '$lib/types/geometry.js';
 
 export type TransformMode = 'translate' | 'rotate' | 'scale';
 
-export interface StlTransform {
+export interface ObjectTransform {
 	positionX: number;
 	positionY: number;
 	positionZ: number;
@@ -16,29 +17,103 @@ export interface StlTransform {
 	scaleZ: number;
 }
 
-export interface StlViewer {
-	mesh: THREE.Mesh;
-	transformControls: TransformControls;
-	setMode: (mode: TransformMode) => void;
-	getTransformedVertices: () => Float32Array;
-	getTransform: () => StlTransform;
-	setTransform: (t: Partial<StlTransform>) => void;
+// Keep backward compat alias
+export type StlTransform = ObjectTransform;
+
+export interface ObjectViewer {
+	objectId: string;
+	mesh: THREE.Object3D;
+	getTransform: () => ObjectTransform;
+	setTransform: (t: Partial<ObjectTransform>) => void;
 	autoFlatten: () => void;
-	onTransformChange: (cb: (t: StlTransform) => void) => void;
+	onTransformChange: (cb: (t: ObjectTransform) => void) => void;
+	offTransformChange: (cb: (t: ObjectTransform) => void) => void;
+	dispose: () => void;
+}
+
+export interface StlViewer extends ObjectViewer {
+	mesh: THREE.Mesh;
+	getTransformedVertices: () => Float32Array;
+}
+
+export interface SvgViewer extends ObjectViewer {
+	getTransformedPolylines: () => Polyline[];
+}
+
+export interface TransformControlsManager {
+	attachTo: (viewer: ObjectViewer) => void;
+	detach: () => void;
+	setMode: (mode: TransformMode) => void;
+	getMode: () => TransformMode;
 	dispose: () => void;
 }
 
 /**
- * Add an STL mesh to the scene with transform controls.
+ * Create a shared TransformControls manager. Only one instance exists;
+ * it can be attached to any ObjectViewer's mesh.
  */
-export function addStlMesh(
-	geometry: THREE.BufferGeometry,
+export function createTransformControlsManager(
 	scene: THREE.Scene,
 	camera: THREE.PerspectiveCamera,
 	renderer: THREE.WebGLRenderer,
 	orbitControls: OrbitControls
+): TransformControlsManager {
+	const tc = new TransformControls(camera, renderer.domElement);
+	tc.setMode('translate');
+	scene.add(tc.getHelper());
+
+	let currentViewer: ObjectViewer | null = null;
+	let mode: TransformMode = 'translate';
+
+	tc.addEventListener('dragging-changed', (event) => {
+		orbitControls.enabled = !event.value;
+	});
+
+	tc.addEventListener('objectChange', () => {
+		if (currentViewer) {
+			// Notify the viewer's own listeners
+			const t = currentViewer.getTransform();
+			(currentViewer as any)._notifyChange?.(t);
+		}
+	});
+
+	function attachTo(viewer: ObjectViewer) {
+		currentViewer = viewer;
+		tc.attach(viewer.mesh as THREE.Object3D);
+		tc.setMode(mode);
+	}
+
+	function detach() {
+		currentViewer = null;
+		tc.detach();
+	}
+
+	function setMode(m: TransformMode) {
+		mode = m;
+		tc.setMode(m);
+	}
+
+	function getMode() {
+		return mode;
+	}
+
+	function dispose() {
+		tc.detach();
+		scene.remove(tc.getHelper());
+		tc.dispose();
+	}
+
+	return { attachTo, detach, setMode, getMode, dispose };
+}
+
+/**
+ * Add an STL mesh to the scene. Returns an StlViewer (implements ObjectViewer).
+ */
+export function addStlMesh(
+	geometry: THREE.BufferGeometry,
+	objectId: string,
+	scene: THREE.Scene
 ): StlViewer {
-	// Create mesh
 	const material = new THREE.MeshPhongMaterial({
 		color: 0x6688cc,
 		specular: 0x222222,
@@ -46,7 +121,7 @@ export function addStlMesh(
 		flatShading: true
 	});
 	const mesh = new THREE.Mesh(geometry, material);
-	mesh.name = 'stl-model';
+	mesh.name = 'object-' + objectId;
 
 	// Center geometry
 	geometry.computeBoundingBox();
@@ -58,46 +133,26 @@ export function addStlMesh(
 	// Position on bed surface
 	geometry.computeBoundingBox();
 	const newBbox = geometry.boundingBox!;
-	mesh.position.set(
-		-newBbox.min.x,
-		-newBbox.min.y,
-		-newBbox.min.z
-	);
+	mesh.position.set(-newBbox.min.x, -newBbox.min.y, -newBbox.min.z);
 
 	scene.add(mesh);
 
-	// Transform controls
-	const transformControls = new TransformControls(camera, renderer.domElement);
-	transformControls.attach(mesh);
-	transformControls.setMode('translate');
-	scene.add(transformControls.getHelper());
-
-	// Disable orbit controls while transforming
-	transformControls.addEventListener('dragging-changed', (event) => {
-		orbitControls.enabled = !event.value;
-	});
-
-	let changeCallbacks: Array<(t: StlTransform) => void> = [];
+	let changeCallbacks: Array<(t: ObjectTransform) => void> = [];
 
 	function notifyTransformChange() {
 		const t = getTransform();
 		for (const cb of changeCallbacks) cb(t);
 	}
 
-	function onTransformChange(cb: (t: StlTransform) => void) {
+	function onTransformChange(cb: (t: ObjectTransform) => void) {
 		changeCallbacks.push(cb);
 	}
 
-	// Fire callback when user drags transform controls
-	transformControls.addEventListener('objectChange', () => {
-		notifyTransformChange();
-	});
-
-	function setMode(mode: TransformMode) {
-		transformControls.setMode(mode);
+	function offTransformChange(cb: (t: ObjectTransform) => void) {
+		changeCallbacks = changeCallbacks.filter((c) => c !== cb);
 	}
 
-	function getTransform(): StlTransform {
+	function getTransform(): ObjectTransform {
 		return {
 			positionX: mesh.position.x,
 			positionY: mesh.position.y,
@@ -111,7 +166,7 @@ export function addStlMesh(
 		};
 	}
 
-	function setTransform(t: Partial<StlTransform>) {
+	function setTransform(t: Partial<ObjectTransform>) {
 		if (t.positionX !== undefined) mesh.position.x = t.positionX;
 		if (t.positionY !== undefined) mesh.position.y = t.positionY;
 		if (t.positionZ !== undefined) mesh.position.z = t.positionZ;
@@ -124,32 +179,20 @@ export function addStlMesh(
 		notifyTransformChange();
 	}
 
-	/**
-	 * Auto-flatten: move the model so its bottom sits at Y=0 (Three.js Y-up = CNC Z=0 work surface).
-	 */
 	function autoFlatten() {
 		mesh.updateMatrixWorld(true);
-		const bbox = new THREE.Box3().setFromObject(mesh);
-		// Shift model up so bottom is at Y=0
-		mesh.position.y -= bbox.min.y;
+		const box = new THREE.Box3().setFromObject(mesh);
+		mesh.position.y -= box.min.y;
 		notifyTransformChange();
 	}
 
-	/**
-	 * Extract vertices with the mesh's current world transform applied.
-	 * This is what the G-code generator should use - it reflects
-	 * exactly what the user sees in the viewport.
-	 */
 	function getTransformedVertices(): Float32Array {
 		mesh.updateMatrixWorld(true);
 		const worldMatrix = mesh.matrixWorld;
-
 		const posAttr = geometry.getAttribute('position');
 		const index = geometry.index;
 		const tempVec = new THREE.Vector3();
 
-		// Three.js is Y-up, CNC is Z-up. Swap Y↔Z:
-		// CNC X = Three X, CNC Y = Three Z, CNC Z = Three Y
 		if (index) {
 			const triangleCount = index.count / 3;
 			const result = new Float32Array(triangleCount * 9);
@@ -158,49 +201,46 @@ export function addStlMesh(
 					const idx = index.getX(i * 3 + v);
 					tempVec.set(posAttr.getX(idx), posAttr.getY(idx), posAttr.getZ(idx));
 					tempVec.applyMatrix4(worldMatrix);
-					result[i * 9 + v * 3 + 0] = tempVec.x; // CNC X = Three X
-					result[i * 9 + v * 3 + 1] = tempVec.z; // CNC Y = Three Z
-					result[i * 9 + v * 3 + 2] = tempVec.y; // CNC Z = Three Y
+					result[i * 9 + v * 3 + 0] = tempVec.x;
+					result[i * 9 + v * 3 + 1] = tempVec.z;
+					result[i * 9 + v * 3 + 2] = tempVec.y;
 				}
 			}
 			return result;
 		}
 
-		// Non-indexed geometry
 		const count = posAttr.count;
 		const result = new Float32Array(count * 3);
 		for (let i = 0; i < count; i++) {
 			tempVec.set(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
 			tempVec.applyMatrix4(worldMatrix);
-			result[i * 3 + 0] = tempVec.x; // CNC X = Three X
-			result[i * 3 + 1] = tempVec.z; // CNC Y = Three Z
-			result[i * 3 + 2] = tempVec.y; // CNC Z = Three Y
+			result[i * 3 + 0] = tempVec.x;
+			result[i * 3 + 1] = tempVec.z;
+			result[i * 3 + 2] = tempVec.y;
 		}
 		return result;
 	}
 
 	function dispose() {
-		transformControls.detach();
-		scene.remove(transformControls.getHelper());
-		transformControls.dispose();
 		scene.remove(mesh);
 		geometry.dispose();
 		material.dispose();
 	}
 
-	return { mesh, transformControls, setMode, getTransformedVertices, getTransform, setTransform, autoFlatten, onTransformChange, dispose };
-}
+	const viewer: StlViewer = {
+		objectId,
+		mesh,
+		getTransform,
+		setTransform,
+		autoFlatten,
+		onTransformChange,
+		offTransformChange,
+		getTransformedVertices,
+		dispose
+	};
 
-/**
- * Remove existing STL model from scene.
- */
-export function removeStlModel(scene: THREE.Scene): void {
-	const existing = scene.getObjectByName('stl-model');
-	if (existing) {
-		scene.remove(existing);
-		if (existing instanceof THREE.Mesh) {
-			existing.geometry.dispose();
-			(existing.material as THREE.Material).dispose();
-		}
-	}
+	// Expose for TransformControlsManager - set after viewer is created
+	(viewer as any)._notifyChange = notifyTransformChange;
+
+	return viewer;
 }

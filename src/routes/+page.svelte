@@ -1,95 +1,176 @@
 <script lang="ts">
+	import * as THREE from 'three';
 	import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
 	import Viewport3D from '$lib/components/viewport/Viewport3D.svelte';
-	import { project } from '$lib/stores/project.js';
+	import { project, addObject, removeObject, selectObject, resetProject } from '$lib/stores/project.js';
 	import { toolConfig } from '$lib/stores/tool-config.js';
 	import { machineConfig, stockConfig } from '$lib/stores/machine-config.js';
 	import { parseSvg } from '$lib/engine/svg/parser.js';
 	import { loadStlFromBuffer } from '$lib/engine/stl/loader.js';
-	import { addStlMesh, removeStlModel, type StlViewer, type TransformMode } from '$lib/components/viewport/stl-controls.js';
+	import {
+		addStlMesh,
+		createTransformControlsManager,
+		type ObjectViewer,
+		type StlViewer,
+		type SvgViewer,
+		type TransformMode,
+		type TransformControlsManager
+	} from '$lib/components/viewport/stl-controls.js';
+	import { addSvgMesh } from '$lib/components/viewport/svg-controls.js';
 	import type { SceneContext } from '$lib/components/viewport/scene-setup.js';
-	import type { SvgWorkerOutput } from '$lib/types/worker-messages.js';
-	import type { StlWorkerOutput } from '$lib/types/worker-messages.js';
+	import type { SvgWorkerOutput, StlWorkerOutput } from '$lib/types/worker-messages.js';
+	import type { ProjectObject } from '$lib/types/project-object.js';
 
 	let viewportRef: Viewport3D;
 	let sceneCtx: SceneContext | null = $state(null);
 	let currentWorker: Worker | null = null;
-	let stlViewer: StlViewer | null = $state(null);
+	let transformManager: TransformControlsManager | null = null;
+	let viewers: Map<string, ObjectViewer> = new Map();
+	let selectedViewer: ObjectViewer | null = $state(null);
 	let transformMode: TransformMode = $state('translate');
+
+	// Create transform manager when scene becomes available
+	$effect(() => {
+		if (sceneCtx && !transformManager) {
+			transformManager = createTransformControlsManager(
+				sceneCtx.scene,
+				sceneCtx.camera,
+				sceneCtx.renderer,
+				sceneCtx.controls
+			);
+		}
+	});
 
 	function setTransformMode(mode: TransformMode) {
 		transformMode = mode;
-		stlViewer?.setMode(mode);
+		transformManager?.setMode(mode);
 	}
 
-	async function handleFile(file: File) {
-		const ext = file.name.split('.').pop()?.toLowerCase();
+	async function handleFiles(files: File[]) {
+		for (const file of files) {
+			const ext = file.name.split('.').pop()?.toLowerCase();
 
-		if (ext === 'svg') {
-			// Clean up previous STL viewer
-			if (stlViewer) {
-				stlViewer.dispose();
-				stlViewer = null;
+			if (ext === 'svg') {
+				const text = await file.text();
+				const parsed = parseSvg(text);
+				const allPolylines = parsed.elements.flatMap((el) => el.polylines);
+
+				const obj: ProjectObject = {
+					id: crypto.randomUUID(),
+					name: file.name,
+					type: 'svg',
+					svgPolylines: allPolylines,
+					visible: true
+				};
+
+				if (sceneCtx) {
+					const viewer = addSvgMesh(allPolylines, obj.id, sceneCtx.scene);
+					viewers.set(obj.id, viewer);
+				}
+
+				addObject(obj);
+				handleSelectObject(obj.id);
+			} else if (ext === 'stl') {
+				const buffer = await file.arrayBuffer();
+				const geometry = loadStlFromBuffer(buffer);
+
+				const obj: ProjectObject = {
+					id: crypto.randomUUID(),
+					name: file.name,
+					type: 'stl',
+					stlBuffer: buffer,
+					visible: true
+				};
+
+				if (sceneCtx) {
+					const viewer = addStlMesh(geometry, obj.id, sceneCtx.scene);
+					viewers.set(obj.id, viewer);
+				}
+
+				addObject(obj);
+				handleSelectObject(obj.id);
+			} else {
+				project.update((p) => ({
+					...p,
+					workflowState: 'error',
+					errorMessage: `Unsupported file: ${file.name}. Use .svg or .stl files.`
+				}));
 			}
-
-			const text = await file.text();
-			const parsed = parseSvg(text);
-			const allPolylines = parsed.elements.flatMap((el) => el.polylines);
-
-			project.update((p) => ({
-				...p,
-				fileType: 'svg',
-				fileName: file.name,
-				svgPolylines: allPolylines,
-				stlVertices: null,
-				stlBuffer: null,
-				workflowState: 'file-loaded'
-			}));
-		} else if (ext === 'stl') {
-			// Clean up previous STL viewer
-			if (stlViewer) {
-				stlViewer.dispose();
-				stlViewer = null;
-			}
-
-			const buffer = await file.arrayBuffer();
-			const geometry = loadStlFromBuffer(buffer);
-
-			// Add to 3D viewport and keep reference
-			if (sceneCtx) {
-				removeStlModel(sceneCtx.scene);
-				stlViewer = addStlMesh(geometry, sceneCtx.scene, sceneCtx.camera, sceneCtx.renderer, sceneCtx.controls);
-			}
-
-			project.update((p) => ({
-				...p,
-				fileType: 'stl',
-				fileName: file.name,
-				stlVertices: null,
-				stlBuffer: buffer,
-				workflowState: 'file-loaded'
-			}));
-		} else {
-			project.update((p) => ({
-				...p,
-				workflowState: 'error',
-				errorMessage: 'Unsupported file format. Please use .svg or .stl files.'
-			}));
 		}
+	}
+
+	function handleSelectObject(id: string) {
+		selectObject(id);
+		const viewer = viewers.get(id);
+		if (viewer && transformManager) {
+			transformManager.attachTo(viewer);
+			selectedViewer = viewer;
+		}
+	}
+
+	function handleRemoveObject(id: string) {
+		const viewer = viewers.get(id);
+		if (viewer) {
+			if (selectedViewer === viewer) {
+				transformManager?.detach();
+				selectedViewer = null;
+			}
+			viewer.dispose();
+			viewers.delete(id);
+		}
+		removeObject(id);
+
+		// Auto-select next object if we had the removed one selected
+		const p = $project;
+		if (p.selectedObjectId && viewers.has(p.selectedObjectId)) {
+			handleSelectObject(p.selectedObjectId);
+		}
+	}
+
+	function handleResetAll() {
+		transformManager?.detach();
+		selectedViewer = null;
+		for (const viewer of viewers.values()) {
+			viewer.dispose();
+		}
+		viewers.clear();
+		viewportRef?.clearToolpath();
+		resetProject();
 	}
 
 	function handleGenerate() {
 		const p = $project;
+		const hasStl = p.objects.some((o) => o.type === 'stl');
+		const hasSvg = p.objects.some((o) => o.type === 'svg');
 
-		if (p.fileType === 'svg') {
-			generateSvg();
-		} else if (p.fileType === 'stl') {
+		if (hasStl) {
 			generateStl();
+		} else if (hasSvg) {
+			generateSvg();
 		}
 	}
 
 	function generateSvg() {
 		if (currentWorker) currentWorker.terminate();
+
+		// Collect transformed polylines from all SVG viewers
+		const allPolylines: import('$lib/types/geometry.js').Polyline[] = [];
+		for (const obj of $project.objects) {
+			if (obj.type !== 'svg') continue;
+			const viewer = viewers.get(obj.id) as SvgViewer | undefined;
+			if (viewer) {
+				allPolylines.push(...viewer.getTransformedPolylines());
+			}
+		}
+
+		if (allPolylines.length === 0) {
+			project.update((p) => ({
+				...p,
+				workflowState: 'error',
+				errorMessage: 'No SVG polylines to process.'
+			}));
+			return;
+		}
 
 		project.update((p) => ({
 			...p,
@@ -108,7 +189,6 @@
 
 		worker.onmessage = (event: MessageEvent<SvgWorkerOutput>) => {
 			const msg = event.data;
-
 			switch (msg.type) {
 				case 'progress':
 					project.update((p) => ({
@@ -152,7 +232,7 @@
 
 		worker.postMessage({
 			type: 'process-svg',
-			polylines: $project.svgPolylines,
+			polylines: allPolylines,
 			toolConfig: $toolConfig,
 			machineConfig: $machineConfig,
 			cutDepth: $project.cutDepth
@@ -162,13 +242,32 @@
 	function generateStl() {
 		if (currentWorker) currentWorker.terminate();
 
-		if (!stlViewer) {
+		// Collect transformed vertices from all STL viewers
+		const vertexArrays: Float32Array[] = [];
+		for (const obj of $project.objects) {
+			if (obj.type !== 'stl') continue;
+			const viewer = viewers.get(obj.id) as StlViewer | undefined;
+			if (viewer) {
+				vertexArrays.push(viewer.getTransformedVertices());
+			}
+		}
+
+		if (vertexArrays.length === 0) {
 			project.update((p) => ({
 				...p,
 				workflowState: 'error',
-				errorMessage: 'No STL model loaded in viewport.'
+				errorMessage: 'No STL models loaded in viewport.'
 			}));
 			return;
+		}
+
+		// Merge all vertex arrays into one
+		const totalLength = vertexArrays.reduce((sum, a) => sum + a.length, 0);
+		const mergedVertices = new Float32Array(totalLength);
+		let offset = 0;
+		for (const arr of vertexArrays) {
+			mergedVertices.set(arr, offset);
+			offset += arr.length;
 		}
 
 		project.update((p) => ({
@@ -188,7 +287,6 @@
 
 		worker.onmessage = (event: MessageEvent<StlWorkerOutput>) => {
 			const msg = event.data;
-
 			switch (msg.type) {
 				case 'progress':
 					project.update((p) => ({
@@ -230,43 +328,80 @@
 			currentWorker = null;
 		};
 
-		// Extract transformed vertices from the viewport mesh (includes position/rotation/scale)
-		const vertices = stlViewer.getTransformedVertices();
 		worker.postMessage({
 			type: 'process-stl',
-			vertices,
+			vertices: mergedVertices,
 			toolConfig: $toolConfig,
 			machineConfig: $machineConfig,
 			stockConfig: $stockConfig,
 			resolution: $project.resolution,
 			stepover: $project.stepover
-		}, [vertices.buffer]);
+		}, [mergedVertices.buffer]);
 	}
 
-	function handleResetFile() {
-		if (stlViewer) {
-			stlViewer.dispose();
-			stlViewer = null;
+	function handleViewportClick(event: MouseEvent) {
+		if (!sceneCtx) return;
+
+		const canvas = event.target as HTMLCanvasElement;
+		const rect = canvas.getBoundingClientRect();
+		const mouse = new THREE.Vector2(
+			((event.clientX - rect.left) / rect.width) * 2 - 1,
+			-((event.clientY - rect.top) / rect.height) * 2 + 1
+		);
+
+		const raycaster = new THREE.Raycaster();
+		raycaster.setFromCamera(mouse, sceneCtx.camera);
+
+		// Collect all meshes belonging to viewers
+		const meshes: THREE.Object3D[] = [];
+		for (const viewer of viewers.values()) {
+			if (viewer.mesh instanceof THREE.Group) {
+				viewer.mesh.traverse((child) => {
+					if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
+						meshes.push(child);
+					}
+				});
+			} else {
+				meshes.push(viewer.mesh);
+			}
 		}
-		viewportRef?.clearToolpath();
-		project.update(p => ({
-			...p,
-			fileType: null,
-			fileName: '',
-			svgPolylines: [],
-			stlVertices: null,
-			stlBuffer: null,
-			workflowState: 'idle',
-			gcode: '',
-			errorMessage: ''
-		}));
+
+		const intersects = raycaster.intersectObjects(meshes, false);
+		if (intersects.length > 0) {
+			// Find which viewer owns this mesh
+			const hitObj = intersects[0].object;
+			for (const [id, viewer] of viewers) {
+				if (viewer.mesh === hitObj) {
+					handleSelectObject(id);
+					return;
+				}
+				// Check if hit object is a child of viewer's group
+				if (viewer.mesh instanceof THREE.Group) {
+					let parent = hitObj.parent;
+					while (parent) {
+						if (parent === viewer.mesh) {
+							handleSelectObject(id);
+							return;
+						}
+						parent = parent.parent;
+					}
+				}
+			}
+		}
 	}
 </script>
 
-<Sidebar onfile={handleFile} ongenerate={handleGenerate} onreset={handleResetFile} {stlViewer} />
+<Sidebar
+	onfiles={handleFiles}
+	ongenerate={handleGenerate}
+	onreset={handleResetAll}
+	onselect={handleSelectObject}
+	onremove={handleRemoveObject}
+	{selectedViewer}
+/>
 
 <div class="main-area">
-	{#if $project.fileType === 'stl' && stlViewer}
+	{#if selectedViewer}
 		<div class="toolbar">
 			<button
 				class="tool-btn"
@@ -288,7 +423,7 @@
 			>Scale</button>
 		</div>
 	{/if}
-	<Viewport3D bind:this={viewportRef} bind:sceneCtx />
+	<Viewport3D bind:this={viewportRef} bind:sceneCtx onviewportclick={handleViewportClick} />
 </div>
 
 <style>

@@ -8,9 +8,10 @@
 
 	interface Props {
 		sceneCtx?: SceneContext | null;
+		onviewportclick?: (event: MouseEvent) => void;
 	}
 
-	let { sceneCtx = $bindable(null) }: Props = $props();
+	let { sceneCtx = $bindable(null), onviewportclick }: Props = $props();
 	let canvas: HTMLCanvasElement;
 	let stockGroup: import('three').Group | null = null;
 
@@ -41,7 +42,6 @@
 		if (!sceneCtx) return;
 		const gcode = $project.gcode;
 
-		// Only show toolpath when we have gcode and the processing is done
 		if ($project.workflowState === 'done' && gcode) {
 			// Toolpath data stored in project is already rendered when gcode is generated
 		}
@@ -58,10 +58,14 @@
 		if (!sceneCtx) return;
 		removeToolpath(sceneCtx.scene);
 	}
+
+	function handleCanvasClick(event: MouseEvent) {
+		onviewportclick?.(event);
+	}
 </script>
 
 <div class="viewport-container">
-	<canvas bind:this={canvas}></canvas>
+	<canvas bind:this={canvas} onclick={handleCanvasClick}></canvas>
 </div>
 
 <style>
